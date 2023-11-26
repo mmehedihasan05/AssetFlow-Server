@@ -115,6 +115,7 @@ async function mainProcess() {
         // console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
         const users = client.db("a12-assetflow").collection("users");
+        const products = client.db("a12-assetflow").collection("products");
         const misc = client.db("a12-assetflow").collection("misc");
 
         // hr verify middleware
@@ -219,12 +220,27 @@ async function mainProcess() {
             res.send(packagesData.data);
         });
 
+        // Add Product
+        // Security: Verify HR
+        app.post("/product/add", async (req, res) => {
+            console.log("product add ", req.body?.productInformation);
+
+            const productInsertResult = await products.insertOne(req.body?.productInformation);
+
+            res.send(productInsertResult);
+        });
+
+        // To see and delete data
         app.get("/deleteUserData", async (req, res) => {
             let ans = await users.deleteMany({});
             res.send(ans);
         });
         app.get("/seeUserData", async (req, res) => {
             let ans = await users.find({}).toArray();
+            res.send(ans);
+        });
+        app.get("/seeAllProducts", async (req, res) => {
+            let ans = await products.find({}).toArray();
             res.send(ans);
         });
     } finally {
