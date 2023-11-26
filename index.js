@@ -67,7 +67,7 @@ const verifyToken = async (req, res, next) => {
     if (!token) {
         return res.status(401).send({ message: "unauthorized" });
     }
-
+    console.log("verifyToken");
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         //    error
         if (err) {
@@ -90,6 +90,9 @@ const requestValidate = async (req, res, next) => {
     const userEmail = extractuserEmail(req, method);
 
     const requestedUrl = req.originalUrl;
+
+    console.log(req.user);
+    console.log("Request Validate", { decoded_Email, userEmail });
 
     if (decoded_Email !== userEmail) {
         return res.status(401).send({ message: "unauthorized" });
@@ -243,7 +246,7 @@ async function mainProcess() {
         });
 
         // All Products
-        // Security: Verify Employee or HR
+        // Security: Verify token. Used by both employee and HR
         app.get("/product", verifyToken, requestValidate, async (req, res) => {
             let decoded_Email = req.user?.userEmail;
 
@@ -264,9 +267,54 @@ async function mainProcess() {
             ) {
                 emailToQuery = userInfoResult.currentWorkingCompanyEmail;
             }
+            /*
+            title
+availability
+type
+sort
+
+  title: 'Asus',
+  availability: 'available',
+  type: 'non_returnable',
+  sort: 'lowToHigh'
+             */
+
+            let queryReq = req.query;
+            let searchQuery = {};
+
+            // title : productName
+            if (queryReq?.title) {
+                searchQuery.productName = { $regex: new RegExp(queryReq?.title, "i") };
+            }
+
+            // type : productType
+            if (queryReq?.type) {
+                searchQuery.productType = queryReq?.type;
+            }
+
+            // availability : productQuantity
+            if (queryReq?.availability) {
+                if (queryReq?.availability === "available") {
+                    searchQuery.productQuantity = { $gte: 1 };
+                } else if (queryReq?.availability === "unavailable") {
+                    searchQuery.productQuantity = { $lt: 1 };
+                }
+            }
+
+            let sortQuery = {};
+            if (queryReq?.sort === "lowToHigh") {
+                sortQuery.productQuantity = 1;
+            } else if (queryReq?.sort === "highToLow") {
+                sortQuery.productQuantity = -1;
+            }
 
             if (emailToQuery) {
-                const productList = await productListFetch(decoded_Email);
+                searchQuery.productAddedBy = emailToQuery;
+
+                console.log({ searchQuery });
+
+                let productList = await products.find(searchQuery).sort(sortQuery).toArray();
+
                 return res.send(productList);
             } else {
                 return res.send([]);
@@ -275,7 +323,7 @@ async function mainProcess() {
 
         // Add Product
         // Security: Verify HR
-        app.post("/product/add", async (req, res) => {
+        app.post("/product/add", verifyToken, requestValidate, verifyHR, async (req, res) => {
             console.log("product add ", req.body?.productInformation);
 
             const productInsertResult = await products.insertOne(req.body?.productInformation);
@@ -284,8 +332,16 @@ async function mainProcess() {
         });
 
         // To see and delete data
+        // To see and delete data
+        // To see and delete data
         app.get("/deleteUserData", async (req, res) => {
+            return;
             let ans = await users.deleteMany({});
+            res.send(ans);
+        });
+        app.get("/deleteAllProducts", async (req, res) => {
+            return;
+            let ans = await products.deleteMany({});
             res.send(ans);
         });
         app.get("/seeUserData", async (req, res) => {
