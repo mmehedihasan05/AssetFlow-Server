@@ -1,4 +1,4 @@
-import Express from "express";
+import Express, { query } from "express";
 import cors from "cors";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import dotenv from "dotenv";
@@ -86,21 +86,12 @@ const requestValidate = async (req, res, next) => {
     const method = req.method;
 
     let decoded_Email = req.user?.userEmail;
-    let decoded_UserId = req.user?.userId;
 
     const userEmail = extractuserEmail(req, method);
 
-    const userId = extractuserId(req, method);
-
     const requestedUrl = req.originalUrl;
-    // console.log({
-    //     method,
-    //     requestedUrl,
-    //     decoded: { decoded_Email, decoded_UserId },
-    //     url: { userEmail, userId },
-    // });
 
-    if (decoded_Email !== userEmail && decoded_UserId !== userId) {
+    if (decoded_Email !== userEmail) {
         return res.status(401).send({ message: "unauthorized" });
     }
 
@@ -118,19 +109,50 @@ async function mainProcess() {
         const products = client.db("a12-assetflow").collection("products");
         const misc = client.db("a12-assetflow").collection("misc");
 
-        // hr verify middleware
-        const verifyHR = async (req, res, next) => {
-            let decoded_Email = req.user?.userEmail;
-
-            const query = { email: decoded_Email };
+        const userInformationFetch = async (email) => {
+            const query = { userEmail: email };
 
             const userInfoResult = await users.findOne(query);
 
-            if (userInfoResult.role === "hr") {
+            return userInfoResult;
+        };
+
+        // hr verify middleware
+        const verifyHR = async (req, res, next) => {
+            let decoded_Email = req.user?.userEmail;
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            if (userInfoResult.userRole === "hr") {
+                req.userInformation = userInfoResult;
                 next();
             } else {
                 return res.status(403).send({ message: "forbidden access" });
             }
+        };
+
+        const verifyEmployee = async (req, res, next) => {
+            let decoded_Email = req.user?.userEmail;
+
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            if (userInfoResult.userRole === "employee") {
+                req.userInformation = userInfoResult;
+                next();
+            } else {
+                return res.status(403).send({ message: "forbidden access" });
+            }
+        };
+
+        const userInfoFetch = async (queryEmail) => {
+            const query = { userEmail: queryEmail };
+            const userInfoResult = await users.findOne(query);
+            return userInfoResult;
+        };
+
+        const productListFetch = async (queryEmail) => {
+            const query = { productAddedBy: queryEmail };
+            let productsResult = await products.find(query).toArray();
+            return productsResult;
         };
 
         // Authenticating
@@ -138,7 +160,7 @@ async function mainProcess() {
             const userEmail = req.body.email;
             const userId = req.body.userId;
 
-            const token = jwt.sign({ userEmail, userId }, process.env.ACCESS_TOKEN_SECRET, {
+            const token = jwt.sign({ userEmail }, process.env.ACCESS_TOKEN_SECRET, {
                 expiresIn: "24h",
             });
 
@@ -218,6 +240,37 @@ async function mainProcess() {
         app.get("/packages", async (req, res) => {
             const packagesData = await misc.findOne({ name: "packages" });
             res.send(packagesData.data);
+        });
+
+        // All Products
+        // Security: Verify Employee or HR
+        app.get("/product", verifyToken, requestValidate, async (req, res) => {
+            let decoded_Email = req.user?.userEmail;
+
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            /*
+            HR hole tar email diye search dile e data eshe jabe. 
+            Employee hole currentWorkingCompanyEmail diye search dite hbe.
+            Employee and currentWorkingCompanyEmail o na thakle data jabe na.
+            */
+
+            let emailToQuery = null;
+            if (userInfoResult.userRole === "hr") {
+                emailToQuery = userInfoResult.userEmail;
+            } else if (
+                userInfoResult.userRole === "employee" &&
+                userInfoResult?.currentWorkingCompanyEmail
+            ) {
+                emailToQuery = userInfoResult.currentWorkingCompanyEmail;
+            }
+
+            if (emailToQuery) {
+                const productList = await productListFetch(decoded_Email);
+                return res.send(productList);
+            } else {
+                return res.send([]);
+            }
         });
 
         // Add Product
