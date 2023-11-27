@@ -363,6 +363,31 @@ sort
             res.send(productInsertResult);
         });
 
+        // Users Profile update
+        // Security: Employee + HR
+        app.post("/users/updateProfile", verifyToken, requestValidate, async (req, res) => {
+            console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
+
+            let decoded_user_Email = req.user?.userEmail;
+
+            const updatedEmployeeData = {
+                $set: {
+                    userFullName: req.body?.profileInformation?.userFullName,
+                    userDob: req.body?.profileInformation?.userDob,
+                },
+            };
+
+            const updatedEmployeeData_result = await users.updateOne(
+                { userEmail: decoded_user_Email },
+                updatedEmployeeData,
+                { upsert: false }
+            );
+
+            const updated_userInfo = await userInformationFetch(decoded_user_Email);
+
+            res.send({ updatedEmployeeData_result, userInformation: updated_userInfo });
+        });
+
         // Available Users who can be booked
         app.get("/users/available", verifyToken, requestValidate, verifyHR, async (req, res) => {
             let availableEmployee = await users
