@@ -134,6 +134,9 @@ async function mainProcess() {
         };
 
         const verifyEmployee = async (req, res, next) => {
+            const requestedUrl = req.originalUrl;
+            // console.log(requestedUrl);
+
             let decoded_Email = req.user?.userEmail;
 
             const userInfoResult = await userInfoFetch(decoded_Email);
@@ -406,6 +409,20 @@ sort
                 .find({ currentWorkingCompanyEmail: hrEmail, userRole: "employee" })
                 .toArray();
             res.send(subordinates);
+        });
+
+        // My team
+        // Security Employee
+        app.get("/users/myteam", verifyToken, requestValidate, verifyEmployee, async (req, res) => {
+            let hrEmail = req.userInformation.currentWorkingCompanyEmail;
+
+            let teamMembers = await users
+                .find({
+                    $or: [{ currentWorkingCompanyEmail: hrEmail }, { userEmail: hrEmail }],
+                })
+                .toArray();
+
+            res.send(teamMembers);
         });
 
         // Subordinate employee Remove
