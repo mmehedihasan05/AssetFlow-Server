@@ -363,13 +363,75 @@ sort
             res.send(productInsertResult);
         });
 
-        // Users
+        // Available Users who can be booked
         app.get("/users/available", verifyToken, requestValidate, verifyHR, async (req, res) => {
             let availableEmployee = await users
                 .find({ currentWorkingCompanyEmail: null, userRole: "employee" })
                 .toArray();
             res.send(availableEmployee);
         });
+
+        // Subordinate employees
+        // Security HR
+        app.get("/users/subordinates", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            let decoded_Email = req.user?.userEmail;
+            let hrEmail = decoded_Email;
+
+            let subordinates = await users
+                .find({ currentWorkingCompanyEmail: hrEmail, userRole: "employee" })
+                .toArray();
+            res.send(subordinates);
+        });
+
+        // Subordinate employee Remove
+        // Security HR
+        app.delete(
+            "/users/subordinates/remove",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                let decoded_Hr_Email = req.user?.userEmail;
+                let targetedUserEmail = req?.query?.targetedUserEmail;
+
+                console.log({ decoded_Hr_Email, targetedUserEmail });
+
+                // Update information in targetedUserEmail
+                const updatedEmployeeData = {
+                    $set: {
+                        currentWorkingCompanyEmail: null,
+                        currentWorkingCompanyImage: null,
+                        currentWorkingCompanyName: null,
+                    },
+                };
+
+                const updatedEmployeeData_result = await users.updateOne(
+                    { userEmail: targetedUserEmail },
+                    updatedEmployeeData,
+                    { upsert: false }
+                );
+
+                // Update information in decoded_Hr_Email
+                const userInfoResult_hr = await userInfoFetch(decoded_Hr_Email);
+
+                const remainingEmployees = userInfoResult_hr?.currentEmployees.filter(
+                    (employeeEmail) => employeeEmail !== targetedUserEmail
+                );
+
+                const updatedHrData = {
+                    $set: {
+                        currentEmployees: remainingEmployees,
+                    },
+                };
+
+                const updatedHrData_Result = await users.updateOne(
+                    { userEmail: decoded_Hr_Email },
+                    updatedHrData,
+                    { upsert: false }
+                );
+                res.send({ updatedHrData_Result, updatedEmployeeData_result });
+            }
+        );
 
         // users booking
         // Security HR
@@ -420,6 +482,7 @@ sort
                     currentWorkingCompanyImage : userCompanyLogo
                     currentWorkingCompanyName : userCompanyName
              */
+
             res.send({ userBooking_Result, updatedHrData_Result });
         });
 
@@ -438,6 +501,7 @@ sort
                 totalCurrentEmployees: userInfoResult?.currentEmployees.length,
             });
         });
+
         // To see and bulk delete
         // To see and bulk delete
         // To see and bulk delete
