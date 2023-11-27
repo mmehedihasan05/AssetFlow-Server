@@ -67,7 +67,7 @@ const verifyToken = async (req, res, next) => {
     if (!token) {
         return res.status(401).send({ message: "unauthorized" });
     }
-    console.log("verifyToken");
+    // console.log("verifyToken");
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         //    error
         if (err) {
@@ -91,8 +91,8 @@ const requestValidate = async (req, res, next) => {
 
     const requestedUrl = req.originalUrl;
 
-    console.log(req.user);
-    console.log("Request Validate", { decoded_Email, userEmail });
+    // console.log(req.user);
+    // console.log("Request Validate", { decoded_Email, userEmail });
 
     if (decoded_Email !== userEmail) {
         return res.status(401).send({ message: "unauthorized" });
@@ -321,6 +321,38 @@ sort
             }
         });
 
+        app.get("/product/count", verifyToken, requestValidate, async (req, res) => {
+            let decoded_Email = req.user?.userEmail;
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            /*
+            HR hole tar email diye search dile e data eshe jabe. 
+            Employee hole currentWorkingCompanyEmail diye search dite hbe.
+            Employee and currentWorkingCompanyEmail o na thakle data jabe na.
+            */
+
+            let emailToQuery = null;
+            if (userInfoResult.userRole === "hr") {
+                emailToQuery = userInfoResult.userEmail;
+            } else if (
+                userInfoResult.userRole === "employee" &&
+                userInfoResult?.currentWorkingCompanyEmail
+            ) {
+                emailToQuery = userInfoResult.currentWorkingCompanyEmail;
+            }
+
+            if (emailToQuery) {
+                let query = {};
+                query.productAddedBy = emailToQuery;
+
+                let productList = await products.find(query).toArray();
+
+                return res.send({ success: true, totalProducts: productList.length });
+            } else {
+                return res.send({ success: false, totalProducts: 0 });
+            }
+        });
+
         // Add Product
         // Security: Verify HR
         app.post("/product/add", verifyToken, requestValidate, verifyHR, async (req, res) => {
@@ -331,9 +363,84 @@ sort
             res.send(productInsertResult);
         });
 
-        // To see and delete data
-        // To see and delete data
-        // To see and delete data
+        // Users
+        app.get("/users/available", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            let availableEmployee = await users
+                .find({ currentWorkingCompanyEmail: null, userRole: "employee" })
+                .toArray();
+            res.send(availableEmployee);
+        });
+
+        // users booking
+        // Security HR
+        app.post("/users/booking", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            let decoded_Email = req.user?.userEmail;
+            console.log("users booking", req.body?.employeesToBook);
+
+            const userInfoResult_hr = await userInfoFetch(decoded_Email);
+
+            console.log(userInfoResult_hr);
+            // return;
+
+            // Booked user filed updating
+            // array containing employee email
+            const employeesToBook = req.body?.employeesToBook;
+
+            const userBooking_Result = await users.updateMany(
+                { userEmail: { $in: employeesToBook } },
+                {
+                    $set: {
+                        currentWorkingCompanyEmail: userInfoResult_hr?.userEmail,
+                        currentWorkingCompanyImage: userInfoResult_hr?.userCompanyLogo,
+                        currentWorkingCompanyName: userInfoResult_hr?.userCompanyName,
+                    },
+                }
+            );
+
+            // hr info updating
+            const updatedHrData = {
+                $set: {
+                    currentEmployees: [...userInfoResult_hr?.currentEmployees, ...employeesToBook],
+                },
+            };
+
+            const updatedHrData_Result = await users.updateOne(
+                { userEmail: decoded_Email },
+                updatedHrData,
+                { upsert: false }
+            );
+
+            // const userInformation = req.body;
+            // const query = { userEmail: userInformation?.userEmail };
+
+            /*
+             * je hr request dise tar currentEmployees e old gula and new gula push korte hbe AND hr er package limit decrease korte hbe.
+            * je employee id ahsce tader 
+                    currentWorkingCompanyEmail : email_hr
+                    currentWorkingCompanyImage : userCompanyLogo
+                    currentWorkingCompanyName : userCompanyName
+             */
+            res.send({ userBooking_Result, updatedHrData_Result });
+        });
+
+        // MembershipLimit and Current Employee Lenght
+        // Security HR
+        app.get("/membership/check", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            let decoded_Email = req.user?.userEmail;
+
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            // console.log("membership check ", userInfoResult);
+
+            res.send({
+                success: true,
+                currentMemberShipLimit: userInfoResult?.currentMemberShipLimit,
+                totalCurrentEmployees: userInfoResult?.currentEmployees.length,
+            });
+        });
+        // To see and bulk delete
+        // To see and bulk delete
+        // To see and bulk delete
         app.get("/deleteUserData", async (req, res) => {
             return;
             let ans = await users.deleteMany({});
