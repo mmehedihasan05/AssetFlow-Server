@@ -19,7 +19,8 @@ app.use(
             "http://localhost:5173",
             "http://localhost:5174",
             "http://localhost:5175",
-            "https://technest-blog.web.app",
+            "https://a12-assetflow.firebaseapp.com",
+            "https://a12-assetflow.web.app",
         ], // The domains where the client side will run
 
         credentials: true, // This will help to set cookies
@@ -421,7 +422,7 @@ sort
         // Request for asset
         // Security : Employee
         app.post(
-            "/product/request",
+            "/product/request/add",
             verifyToken,
             requestValidate,
             verifyEmployee,
@@ -432,6 +433,7 @@ sort
 
                 const existingProduct = await products_requested.findOne({
                     productId: requestedProductInfo?.productId,
+                    userEmail: requestedProductInfo?.userEmail,
                 });
 
                 if (existingProduct?.productId !== requestedProductInfo?.productId) {
@@ -454,7 +456,7 @@ sort
             requestValidate,
             verifyUser_common,
             async (req, res) => {
-                const userInformation = req?.userInformation;
+                const userInformation = req.userInformation;
 
                 let queryReq = req.query;
                 let searchQuery = {};
@@ -466,6 +468,25 @@ sort
                     userInformation?.currentWorkingCompanyEmail
                 ) {
                     searchQuery.userEmail = userInformation?.userEmail;
+                    searchQuery.currentWorkingCompanyEmail =
+                        userInformation?.currentWorkingCompanyEmail;
+                } else {
+                    searchQuery.userEmail = "";
+                }
+
+                // title : productName
+                if (queryReq?.nameEmailSearch) {
+                    // searchQuery.userEmail = { $regex: new RegExp(queryReq?.nameEmailSearch, "i") };
+                    // searchQuery.userFullName = {
+                    //     $regex: new RegExp(queryReq?.nameEmailSearch, "i"),
+                    // };
+
+                    const searchPattern = new RegExp(queryReq.nameEmailSearch, "i");
+
+                    searchQuery.$or = [
+                        { userEmail: { $regex: searchPattern } },
+                        { userFullName: { $regex: searchPattern } },
+                    ];
                 }
 
                 // title : productName
@@ -503,6 +524,80 @@ sort
                 const deleteResult = await products_requested.deleteOne(deleteQuery);
 
                 res.send(deleteResult);
+            }
+        );
+
+        // Approve Request from Requested Products List
+        // Security HR
+        app.post(
+            "/product/request/approve",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                const productInfo = req.body.productInfo;
+
+                const updatedProductData = {
+                    $set: {
+                        approvalDate: productInfo?.approvalDate,
+                        approvalStatus: "approved",
+                    },
+                };
+
+                const updatedProductData_result = await products_requested.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: false }
+                );
+
+                // Decrease amount in products db
+                const mainProductData = await products.findOne({
+                    _id: new ObjectId(productInfo.productId),
+                });
+
+                const updatedMainProductData = {
+                    $set: {
+                        productQuantity: mainProductData.productQuantity - 1,
+                    },
+                };
+
+                const updatedMainProductData_result = await products.updateOne(
+                    { _id: new ObjectId(productInfo.productId) },
+                    updatedMainProductData,
+                    { upsert: false }
+                );
+
+                res.send(updatedProductData_result);
+                // res.send({});
+            }
+        );
+
+        // Reject Request from Requested Products List
+        // Security HR
+        app.post(
+            "/product/request/reject",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                const productInfo = req.body.productInfo;
+
+                const updatedProductData = {
+                    $set: {
+                        approvalDate: null,
+                        approvalStatus: "rejected",
+                    },
+                };
+
+                const updatedProductData_result = await products_requested.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: false }
+                );
+
+                console.log(productInfo, updatedProductData_result);
+
+                res.send(updatedProductData_result);
             }
         );
 
@@ -558,11 +653,15 @@ sort
         app.get("/users/myteam", verifyToken, requestValidate, verifyEmployee, async (req, res) => {
             let hrEmail = req.userInformation.currentWorkingCompanyEmail;
 
-            let teamMembers = await users
-                .find({
-                    $or: [{ currentWorkingCompanyEmail: hrEmail }, { userEmail: hrEmail }],
-                })
-                .toArray();
+            if (!hrEmail) {
+                return res.send([]);
+            }
+
+            let query = {
+                $or: [{ currentWorkingCompanyEmail: hrEmail }, { userEmail: hrEmail }],
+            };
+            console.log("myTeam", query);
+            let teamMembers = await users.find(query).toArray();
 
             res.send(teamMembers);
         });
