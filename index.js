@@ -110,6 +110,7 @@ async function mainProcess() {
 
         const users = client.db("a12-assetflow").collection("users");
         const products = client.db("a12-assetflow").collection("products");
+        const products_request = client.db("a12-assetflow").collection("products-request");
         const misc = client.db("a12-assetflow").collection("misc");
 
         const userInformationFetch = async (email) => {
@@ -142,6 +143,22 @@ async function mainProcess() {
             const userInfoResult = await userInfoFetch(decoded_Email);
 
             if (userInfoResult.userRole === "employee") {
+                req.userInformation = userInfoResult;
+                next();
+            } else {
+                return res.status(403).send({ message: "forbidden access" });
+            }
+        };
+
+        const verifyUser_common = async (req, res, next) => {
+            const requestedUrl = req.originalUrl;
+            // console.log(requestedUrl);
+
+            let decoded_Email = req.user?.userEmail;
+
+            const userInfoResult = await userInfoFetch(decoded_Email);
+
+            if (userInfoResult.userRole === "employee" || userInfoResult.userRole === "hr") {
                 req.userInformation = userInfoResult;
                 next();
             } else {
@@ -190,7 +207,7 @@ async function mainProcess() {
 
             const userInformation = await users.findOne(query);
 
-            console.log("userInformation authenticate", userInformation);
+            // console.log("userInformation authenticate", userInformation);
 
             res.cookie("token", token, cookieOptionsProd);
 
@@ -250,11 +267,13 @@ async function mainProcess() {
 
         // All Products
         // Security: Verify token. Used by both employee and HR
-        app.get("/product", verifyToken, requestValidate, async (req, res) => {
+        app.get("/product", verifyToken, requestValidate, verifyUser_common, async (req, res) => {
             let decoded_Email = req.user?.userEmail;
+            let hrEmail = req.userInformation;
 
-            const userInfoResult = await userInfoFetch(decoded_Email);
+            const userInformation = req?.userInformation;
 
+            // console.log("userInformation product ", userInformation);
             /*
             HR hole tar email diye search dile e data eshe jabe. 
             Employee hole currentWorkingCompanyEmail diye search dite hbe.
@@ -262,13 +281,13 @@ async function mainProcess() {
             */
 
             let emailToQuery = null;
-            if (userInfoResult.userRole === "hr") {
-                emailToQuery = userInfoResult.userEmail;
+            if (userInformation?.userRole === "hr") {
+                emailToQuery = userInformation?.userEmail;
             } else if (
-                userInfoResult.userRole === "employee" &&
-                userInfoResult?.currentWorkingCompanyEmail
+                userInformation?.userRole === "employee" &&
+                userInformation?.currentWorkingCompanyEmail
             ) {
-                emailToQuery = userInfoResult.currentWorkingCompanyEmail;
+                emailToQuery = userInformation?.currentWorkingCompanyEmail;
             }
             /*
             title
@@ -314,7 +333,7 @@ sort
             if (emailToQuery) {
                 searchQuery.productAddedBy = emailToQuery;
 
-                console.log({ searchQuery });
+                // console.log({ searchQuery });
 
                 let productList = await products.find(searchQuery).sort(sortQuery).toArray();
 
@@ -365,6 +384,23 @@ sort
 
             res.send(productInsertResult);
         });
+
+        // Request for asset
+        // Security : Employee
+        app.post(
+            "/product/request",
+            verifyToken,
+            requestValidate,
+            verifyEmployee,
+            async (req, res) => {
+                console.log(req.body?.requestedProductInfo);
+                const requestInsertResult = await products_request.insertOne(
+                    req.body?.requestedProductInfo
+                );
+                res.send(requestInsertResult);
+            }
+        );
+        // app.post("/product/custom-request");
 
         // Users Profile update
         // Security: Employee + HR
@@ -563,6 +599,10 @@ sort
         });
         app.get("/seeAllProducts", async (req, res) => {
             let ans = await products.find({}).toArray();
+            res.send(ans);
+        });
+        app.get("/seeAllProductsRequest", async (req, res) => {
+            let ans = await products_request.find({}).toArray();
             res.send(ans);
         });
     } finally {
