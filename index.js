@@ -110,7 +110,7 @@ async function mainProcess() {
 
         const users = client.db("a12-assetflow").collection("users");
         const products = client.db("a12-assetflow").collection("products");
-        const products_request = client.db("a12-assetflow").collection("products-request");
+        const products_requested = client.db("a12-assetflow").collection("products-requested");
         const misc = client.db("a12-assetflow").collection("misc");
 
         const userInformationFetch = async (email) => {
@@ -309,7 +309,7 @@ sort
                 searchQuery.productName = { $regex: new RegExp(queryReq?.title, "i") };
             }
 
-            // type : productType
+            // type : productType => Returnable/Non-returnable
             if (queryReq?.type) {
                 searchQuery.productType = queryReq?.type;
             }
@@ -378,11 +378,44 @@ sort
         // Add Product
         // Security: Verify HR
         app.post("/product/add", verifyToken, requestValidate, verifyHR, async (req, res) => {
-            console.log("product add ", req.body?.productInformation);
-
             const productInsertResult = await products.insertOne(req.body?.productInformation);
 
             res.send(productInsertResult);
+        });
+
+        // Update Product
+        // Security: Verify HR
+        app.post("/product/update", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            console.log(req.body.productInformation);
+
+            const productInfo = req.body.productInformation;
+
+            const updatedProductData = {
+                $set: {
+                    productName: productInfo?.productName,
+                    productQuantity: productInfo?.productQuantity,
+                    productType: productInfo?.productType,
+                },
+            };
+
+            const updatedProductData_result = await products.updateOne(
+                { _id: new ObjectId(productInfo._id) },
+                updatedProductData,
+                { upsert: false }
+            );
+
+            res.send(updatedProductData_result);
+        });
+
+        // Delete Product
+        // Security: Verify HR
+        app.delete("/product/delete", verifyToken, requestValidate, verifyHR, async (req, res) => {
+            let targetedAssetId = req.query.targetedAssetId;
+
+            let deleteQuery = { _id: new ObjectId(targetedAssetId) };
+            const deleteResult = await products.deleteOne(deleteQuery);
+
+            res.send(deleteResult);
         });
 
         // Request for asset
@@ -394,18 +427,91 @@ sort
             verifyEmployee,
             async (req, res) => {
                 console.log(req.body?.requestedProductInfo);
-                const requestInsertResult = await products_request.insertOne(
-                    req.body?.requestedProductInfo
-                );
-                res.send(requestInsertResult);
+
+                const requestedProductInfo = req.body?.requestedProductInfo;
+
+                const existingProduct = await products_requested.findOne({
+                    productId: requestedProductInfo?.productId,
+                });
+
+                if (existingProduct?.productId !== requestedProductInfo?.productId) {
+                    const requestInsertResult = await products_requested.insertOne(
+                        requestedProductInfo
+                    );
+
+                    res.send(requestInsertResult);
+                } else {
+                    res.send({ acknowledged: false, productExists: true });
+                }
             }
         );
+
+        // Requested Products list
+        // Security : Employee and HR
+        app.get(
+            "/product/request/list",
+            verifyToken,
+            requestValidate,
+            verifyUser_common,
+            async (req, res) => {
+                const userInformation = req?.userInformation;
+
+                let queryReq = req.query;
+                let searchQuery = {};
+
+                if (userInformation?.userRole === "hr") {
+                    searchQuery.currentWorkingCompanyEmail = userInformation?.userEmail;
+                } else if (
+                    userInformation?.userRole === "employee" &&
+                    userInformation?.currentWorkingCompanyEmail
+                ) {
+                    searchQuery.userEmail = userInformation?.userEmail;
+                }
+
+                // title : productName
+                if (queryReq?.title) {
+                    searchQuery.productName = { $regex: new RegExp(queryReq?.title, "i") };
+                }
+
+                // type : productType => Returnable/Non-returnable
+                if (queryReq?.type) {
+                    searchQuery.productType = queryReq?.type;
+                }
+
+                // approvalStatus => returnable/non_returnable
+                if (queryReq?.requestStatus) {
+                    searchQuery.approvalStatus = queryReq?.requestStatus;
+                }
+
+                let requestedProductsList = await products_requested.find(searchQuery).toArray();
+
+                return res.send(requestedProductsList);
+            }
+        );
+
+        // Cancel request from Requested Products list
+        // Security : Employee
+        app.delete(
+            "/product/request/cancel",
+            verifyToken,
+            requestValidate,
+            verifyEmployee,
+            async (req, res) => {
+                let targetedAssetId = req.query.targetedAssetId;
+                console.log({ targetedAssetId });
+                let deleteQuery = { _id: new ObjectId(targetedAssetId) };
+                const deleteResult = await products_requested.deleteOne(deleteQuery);
+
+                res.send(deleteResult);
+            }
+        );
+
         // app.post("/product/custom-request");
 
         // Users Profile update
         // Security: Employee + HR
         app.post("/users/updateProfile", verifyToken, requestValidate, async (req, res) => {
-            console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
+            // console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
 
             let decoded_user_Email = req.user?.userEmail;
 
@@ -585,12 +691,21 @@ sort
         // To see and bulk delete
         app.get("/deleteUserData", async (req, res) => {
             return;
+            return;
             let ans = await users.deleteMany({});
             res.send(ans);
         });
         app.get("/deleteAllProducts", async (req, res) => {
+            // all PRODUCT delete
+            return;
             return;
             let ans = await products.deleteMany({});
+            res.send(ans);
+        });
+        app.get("/deleteAllProductsRequest", async (req, res) => {
+            // all REQUESTED PRODUCT delete
+            return;
+            let ans = await products_requested.deleteMany({});
             res.send(ans);
         });
         app.get("/seeUserData", async (req, res) => {
@@ -602,7 +717,7 @@ sort
             res.send(ans);
         });
         app.get("/seeAllProductsRequest", async (req, res) => {
-            let ans = await products_request.find({}).toArray();
+            let ans = await products_requested.find({}).toArray();
             res.send(ans);
         });
     } finally {
