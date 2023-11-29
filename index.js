@@ -112,6 +112,9 @@ async function mainProcess() {
         const users = client.db("a12-assetflow").collection("users");
         const products = client.db("a12-assetflow").collection("products");
         const products_requested = client.db("a12-assetflow").collection("products-requested");
+        const products_requested_custom = client
+            .db("a12-assetflow")
+            .collection("products-requested-custom");
         const misc = client.db("a12-assetflow").collection("misc");
 
         const userInformationFetch = async (email) => {
@@ -384,6 +387,22 @@ sort
             res.send(productInsertResult);
         });
 
+        // Make Custom Asset Request
+        // Security: Verify Employee
+        app.post(
+            "/custom-product/add",
+            verifyToken,
+            requestValidate,
+            verifyEmployee,
+            async (req, res) => {
+                const productInsertResult = await products_requested_custom.insertOne(
+                    req.body?.productInformation
+                );
+
+                res.send(productInsertResult);
+            }
+        );
+
         // Update Product
         // Security: Verify HR
         app.post("/product/update", verifyToken, requestValidate, verifyHR, async (req, res) => {
@@ -431,20 +450,26 @@ sort
 
                 const requestedProductInfo = req.body?.requestedProductInfo;
 
-                const existingProduct = await products_requested.findOne({
-                    productId: requestedProductInfo?.productId,
-                    userEmail: requestedProductInfo?.userEmail,
-                });
+                const requestInsertResult = await products_requested.insertOne(
+                    requestedProductInfo
+                );
 
-                if (existingProduct?.productId !== requestedProductInfo?.productId) {
-                    const requestInsertResult = await products_requested.insertOne(
-                        requestedProductInfo
-                    );
+                res.send(requestInsertResult);
 
-                    res.send(requestInsertResult);
-                } else {
-                    res.send({ acknowledged: false, productExists: true });
-                }
+                // const existingProduct = await products_requested.findOne({
+                //     productId: requestedProductInfo?.productId,
+                //     userEmail: requestedProductInfo?.userEmail,
+                // });
+
+                // if (existingProduct?.productId !== requestedProductInfo?.productId) {
+                //     const requestInsertResult = await products_requested.insertOne(
+                //         requestedProductInfo
+                //     );
+
+                //     res.send(requestInsertResult);
+                // } else {
+                //     res.send({ acknowledged: false, productExists: true });
+                // }
             }
         );
 
@@ -510,6 +535,38 @@ sort
             }
         );
 
+        // Requested Products list
+        // Security : Employee and HR
+        app.get(
+            "/custom-product/list",
+            verifyToken,
+            requestValidate,
+            verifyUser_common,
+            async (req, res) => {
+                const userInformation = req.userInformation;
+
+                let queryReq = req.query;
+                let searchQuery = {};
+
+                if (userInformation?.userRole === "hr") {
+                    searchQuery.currentWorkingCompanyEmail = userInformation?.userEmail;
+                } else if (
+                    userInformation?.userRole === "employee" &&
+                    userInformation?.currentWorkingCompanyEmail
+                ) {
+                    searchQuery.userEmail = userInformation?.userEmail;
+                    searchQuery.currentWorkingCompanyEmail =
+                        userInformation?.currentWorkingCompanyEmail;
+                } else {
+                    searchQuery.userEmail = "";
+                }
+
+                let customRequestList = await products_requested_custom.find(searchQuery).toArray();
+
+                return res.send(customRequestList);
+            }
+        );
+
         // Cancel request from Requested Products list
         // Security : Employee
         app.delete(
@@ -572,6 +629,34 @@ sort
             }
         );
 
+        // Approve Request from Custom Requests Page
+        // Security HR
+        app.post(
+            "/custom-product/approve",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                const productInfo = req.body.productInfo;
+
+                const updatedProductData = {
+                    $set: {
+                        approvalDate: productInfo?.approvalDate,
+                        approvalStatus: "approved",
+                    },
+                };
+
+                const updatedProductData_result = await products_requested_custom.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: true }
+                );
+
+                res.send(updatedProductData_result);
+                // res.send({});
+            }
+        );
+
         // Reject Request from Requested Products List
         // Security HR
         app.post(
@@ -598,6 +683,80 @@ sort
                 console.log(productInfo, updatedProductData_result);
 
                 res.send(updatedProductData_result);
+            }
+        );
+
+        // Reject Request from Custom Requests Page
+        // Security HR
+        app.post(
+            "/custom-product/reject",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                const productInfo = req.body.productInfo;
+
+                const updatedProductData = {
+                    $set: {
+                        approvalDate: null,
+                        approvalStatus: "rejected",
+                    },
+                };
+
+                const updatedProductData_result = await products_requested_custom.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: false }
+                );
+
+                console.log(productInfo, updatedProductData_result);
+
+                res.send(updatedProductData_result);
+            }
+        );
+
+        // Return Product from Requested Products
+        // Security : Employee
+        app.post(
+            "/product/request/return",
+            verifyToken,
+            requestValidate,
+            verifyEmployee,
+            async (req, res) => {
+                const productInfo = req.body.productInfo;
+
+                const updatedProductData = {
+                    $set: {
+                        approvalDate: null,
+                        approvalStatus: "returned",
+                    },
+                };
+
+                const updatedProductData_result = await products_requested.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: false }
+                );
+
+                // Decrease amount in products db
+                const mainProductData = await products.findOne({
+                    _id: new ObjectId(productInfo.productId),
+                });
+
+                const updatedMainProductData = {
+                    $set: {
+                        productQuantity: mainProductData.productQuantity + 1,
+                    },
+                };
+
+                const updatedMainProductData_result = await products.updateOne(
+                    { _id: new ObjectId(productInfo.productId) },
+                    updatedMainProductData,
+                    { upsert: false }
+                );
+
+                res.send(updatedProductData_result);
+                // res.send({});
             }
         );
 
@@ -817,6 +976,10 @@ sort
         });
         app.get("/seeAllProductsRequest", async (req, res) => {
             let ans = await products_requested.find({}).toArray();
+            res.send(ans);
+        });
+        app.get("/seeAllCustomRequest", async (req, res) => {
+            let ans = await products_requested_custom.find({}).toArray();
             res.send(ans);
         });
     } finally {
