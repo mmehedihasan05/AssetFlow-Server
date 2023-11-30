@@ -347,7 +347,9 @@ sort
             }
         });
 
-        app.get("/product/count", verifyToken, requestValidate, async (req, res) => {
+        // All product Count
+        // Security : Verify HR
+        app.get("/product/count", verifyToken, requestValidate, verifyHR, async (req, res) => {
             let decoded_Email = req.user?.userEmail;
             const userInfoResult = await userInfoFetch(decoded_Email);
 
@@ -379,6 +381,30 @@ sort
             }
         });
 
+        // Products with limited stock
+        // Security : Verify HR
+        app.get(
+            "/product/limited-stock",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                const userInformation = req.userInformation;
+                const hr_email = userInformation.userEmail;
+
+                let limitedStockQuery = {
+                    productQuantity: { $lt: 10 },
+                    productAddedBy: hr_email,
+                };
+                let limitedStock = await products
+                    .find(limitedStockQuery)
+                    .sort({ productQuantity: 1 })
+                    .toArray();
+
+                return res.send({ limitedStock });
+            }
+        );
+
         // Add Product
         // Security: Verify HR
         app.post("/product/add", verifyToken, requestValidate, verifyHR, async (req, res) => {
@@ -403,7 +429,7 @@ sort
             }
         );
 
-        // Make Custom Asset Request
+        // Update Custom Asset Request
         // Security: Verify Employee
         app.post(
             "/custom-product/update",
