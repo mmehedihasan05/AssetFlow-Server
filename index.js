@@ -403,6 +403,37 @@ sort
             }
         );
 
+        // Make Custom Asset Request
+        // Security: Verify Employee
+        app.post(
+            "/custom-product/update",
+            verifyToken,
+            requestValidate,
+            verifyEmployee,
+            async (req, res) => {
+                const productInfo = req.body.productInformation;
+                const updatedProductData = {
+                    $set: {
+                        productName: productInfo?.productName,
+                        productType: productInfo?.productType,
+                        productPrice: productInfo?.productPrice,
+                        productUrgencyLevel: productInfo?.productUrgencyLevel,
+                        productNotes: productInfo?.productNotes,
+                        productDeliveryDeadline: productInfo?.productDeliveryDeadline,
+                        productImage: productInfo?.productImage,
+                    },
+                };
+
+                const updatedProductData_result = await products_requested_custom.updateOne(
+                    { _id: new ObjectId(productInfo._id) },
+                    updatedProductData,
+                    { upsert: false }
+                );
+
+                res.send(updatedProductData_result);
+            }
+        );
+
         // Update Product
         // Security: Verify HR
         app.post("/product/update", verifyToken, requestValidate, verifyHR, async (req, res) => {
@@ -708,8 +739,6 @@ sort
                     updatedProductData,
                     { upsert: false }
                 );
-
-                console.log(productInfo, updatedProductData_result);
 
                 res.send(updatedProductData_result);
             }
