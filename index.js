@@ -10,8 +10,9 @@ dotenv.config();
 
 const app = Express();
 const port = process.env.PORT || 5000;
-// const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 app.use(
     cors({
         origin: [
@@ -90,8 +91,8 @@ const requestValidate = async (req, res, next) => {
 
     const userEmail = extractuserEmail(req, method);
 
-    const requestedUrl = req.originalUrl;
-
+    // const requestedUrl = req.originalUrl;
+    // console.log("requestedUrl", requestedUrl);
     // console.log(req.user);
     // console.log("Request Validate", { decoded_Email, userEmail });
 
@@ -230,6 +231,23 @@ async function mainProcess() {
             res.send({ success: true });
         });
 
+        // Stripe
+        app.post("/create-payment-intent", async (req, res) => {
+            const { price } = req.body;
+            const amount = parseInt(price * 100);
+
+            // Create a PaymentIntent with the order amount and currency
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "usd",
+                payment_method_types: ["card"],
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        });
+
         // Eta kivabe secure korbo bujhtesi na.
         // user register, google/github login hole etay request ashe.
         // Users insertion
@@ -257,8 +275,11 @@ async function mainProcess() {
                     currentEmployees: [],
                 };
                 console.log(updatedUserInformation);
+
                 const userInsertResult = await users.insertOne(updatedUserInformation);
+
                 console.log("create user ", updatedUserInformation, userInsertResult);
+
                 return res.send({ userInsertResult, userInformation: updatedUserInformation });
             }
         });
@@ -819,28 +840,70 @@ sort
 
         // Users Profile update
         // Security: Employee + HR
-        app.post("/users/updateProfile", verifyToken, requestValidate, async (req, res) => {
-            // console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
+        app.post(
+            "/users/updateProfile",
+            verifyToken,
+            requestValidate,
+            verifyUser_common,
+            async (req, res) => {
+                // console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
 
-            let decoded_user_Email = req.user?.userEmail;
+                let decoded_user_Email = req.user?.userEmail;
 
-            const updatedEmployeeData = {
-                $set: {
-                    userFullName: req.body?.profileInformation?.userFullName,
-                    userDob: req.body?.profileInformation?.userDob,
-                },
-            };
+                const updatedEmployeeData = {
+                    $set: {
+                        userFullName: req.body?.profileInformation?.userFullName,
+                        userDob: req.body?.profileInformation?.userDob,
+                    },
+                };
 
-            const updatedEmployeeData_result = await users.updateOne(
-                { userEmail: decoded_user_Email },
-                updatedEmployeeData,
-                { upsert: false }
-            );
+                const updatedEmployeeData_result = await users.updateOne(
+                    { userEmail: decoded_user_Email },
+                    updatedEmployeeData,
+                    { upsert: false }
+                );
 
-            const updated_userInfo = await userInformationFetch(decoded_user_Email);
+                const updated_userInfo = await userInformationFetch(decoded_user_Email);
 
-            res.send({ updatedEmployeeData_result, userInformation: updated_userInfo });
-        });
+                res.send({ updatedEmployeeData_result, userInformation: updated_userInfo });
+            }
+        );
+
+        // Users Profile update
+        // Security: Employee + HR
+        app.post(
+            "/users/updatePayment",
+            verifyToken,
+            requestValidate,
+            verifyHR,
+            async (req, res) => {
+                // console.log("updateProfile", req.user?.userEmail, req.body.profileInformation);
+
+                let decoded_user_Email = req.user?.userEmail;
+                let packageInfo = req.body?.packageInfo;
+
+                let userInformationOld = req.userInformation;
+
+                let updatedMembershipLimit =
+                    userInformationOld.currentMemberShipLimit + packageInfo.member;
+
+                const updatedPaymentData = {
+                    $set: {
+                        currentMemberShipLimit: updatedMembershipLimit,
+                    },
+                };
+
+                const updatedPaymentData_result = await users.updateOne(
+                    { userEmail: decoded_user_Email },
+                    updatedPaymentData,
+                    { upsert: false }
+                );
+
+                const userInformation = await userInformationFetch(decoded_user_Email);
+
+                res.send({ userInformation, updatedPaymentData_result });
+            }
+        );
 
         // Available Users who can be booked
         app.get("/users/available", verifyToken, requestValidate, verifyHR, async (req, res) => {
