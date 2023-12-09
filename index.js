@@ -258,7 +258,7 @@ async function mainProcess() {
             const query = { userEmail: userInformation?.userEmail };
             const userExistence = await users.findOne(query);
 
-            console.log("userExistence", query, userExistence);
+            // console.log("userExistence", query, userExistence);
 
             if (userExistence?.userEmail) {
                 return res.send({
@@ -274,11 +274,11 @@ async function mainProcess() {
                     currentMemberShipLimit: 0,
                     currentEmployees: [],
                 };
-                console.log(updatedUserInformation);
+                // console.log(updatedUserInformation);
 
                 const userInsertResult = await users.insertOne(updatedUserInformation);
 
-                console.log("create user ", updatedUserInformation, userInsertResult);
+                // console.log("create user ", updatedUserInformation, userInsertResult);
 
                 return res.send({ userInsertResult, userInformation: updatedUserInformation });
             }
@@ -484,7 +484,7 @@ sort
         // Update Product
         // Security: Verify HR
         app.post("/product/update", verifyToken, requestValidate, verifyHR, async (req, res) => {
-            console.log(req.body.productInformation);
+            // console.log(req.body.productInformation);
 
             const productInfo = req.body.productInformation;
 
@@ -524,7 +524,7 @@ sort
             requestValidate,
             verifyEmployee,
             async (req, res) => {
-                console.log(req.body?.requestedProductInfo);
+                // console.log(req.body?.requestedProductInfo);
 
                 const requestedProductInfo = req.body?.requestedProductInfo;
 
@@ -654,7 +654,7 @@ sort
             verifyEmployee,
             async (req, res) => {
                 let targetedAssetId = req.query.targetedAssetId;
-                console.log({ targetedAssetId });
+                // console.log({ targetedAssetId });
                 let deleteQuery = { _id: new ObjectId(targetedAssetId) };
                 const deleteResult = await products_requested.deleteOne(deleteQuery);
 
@@ -758,7 +758,7 @@ sort
                     { upsert: false }
                 );
 
-                console.log(productInfo, updatedProductData_result);
+                // console.log(productInfo, updatedProductData_result);
 
                 res.send(updatedProductData_result);
             }
@@ -937,7 +937,7 @@ sort
             let query = {
                 $or: [{ currentWorkingCompanyEmail: hrEmail }, { userEmail: hrEmail }],
             };
-            console.log("myTeam", query);
+            // console.log("myTeam", query);
             let teamMembers = await users.find(query).toArray();
 
             res.send(teamMembers);
@@ -954,7 +954,7 @@ sort
                 let decoded_Hr_Email = req.user?.userEmail;
                 let targetedUserEmail = req?.query?.targetedUserEmail;
 
-                console.log({ decoded_Hr_Email, targetedUserEmail });
+                // console.log({ decoded_Hr_Email, targetedUserEmail });
 
                 // Update information in targetedUserEmail
                 const updatedEmployeeData = {
@@ -997,11 +997,11 @@ sort
         // Security HR
         app.post("/users/booking", verifyToken, requestValidate, verifyHR, async (req, res) => {
             let decoded_Email = req.user?.userEmail;
-            console.log("users booking", req.body?.employeesToBook);
+            // console.log("users booking", req.body?.employeesToBook);
 
             const userInfoResult_hr = await userInfoFetch(decoded_Email);
 
-            console.log(userInfoResult_hr);
+            // console.log(userInfoResult_hr);
             // return;
 
             // Booked user filed updating
